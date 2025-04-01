@@ -1,3 +1,9 @@
+#  Copyright (c) 2025 AshokShau.
+#  TgMusicBot is an open-source Telegram music bot licensed under AGPL-3.0.
+#  All rights reserved where applicable.
+#
+#
+
 import re
 from typing import Union
 
@@ -28,7 +34,7 @@ async def is_admin_or_reply(msg: types.Message) -> Union[int, types.Message]:
 
 
 async def handle_playback_action(
-        _: Client, msg: types.Message, action, success_msg: str, fail_msg: str
+    _: Client, msg: types.Message, action, success_msg: str, fail_msg: str
 ) -> None:
     """Handle playback actions like stop, pause, resume, mute, unmute."""
     chat_id = await is_admin_or_reply(msg)
@@ -389,7 +395,7 @@ async def callback_query(c: Client, message: types.UpdateNewCallbackQuery) -> No
         return
 
     async def send_response(
-            msg: str, alert: bool = False, delete: bool = False, markup=None
+        msg: str, alert: bool = False, delete: bool = False, markup=None
     ) -> None:
         if alert:
             await message.answer(msg, show_alert=True)
@@ -472,10 +478,28 @@ async def callback_query(c: Client, message: types.UpdateNewCallbackQuery) -> No
                 "⚠️ Error resuming the stream. Please try again.", alert=True
             )
 
+    elif data == "play_timer":
+        curr_song = await chat_cache.get_current_song(chat_id)
+        if not curr_song:
+            await message.answer(
+                "🚫 No song is currently playing in this chat!", show_alert=True
+            )
+            return
+
+        played_time = await call.played_time(chat_id)
+        remaining_time = curr_song.duration - played_time
+
+        text = (
+            f"🎵 Now Playing: {curr_song.name} - {curr_song.artist}\n"
+            # f"👤 By: {curr_song.user}\n"
+            f"\n⏳ Played: {sec_to_min(played_time)} min"
+            f"\n⌛ Remaining: {sec_to_min(remaining_time)} min"
+        )
+        await message.answer(text, show_alert=True)
+        return
     else:
         LOGGER.info("Playing song, data %s", data)
-        platform = data.split("_")[1]
-        song_id = data.split("_")[2]
+        _, platform, song_id = data.split("_", 2)
         await message.answer(f"Playing song for {user.first_name}", show_alert=True)
         reply_message = await message.edit_message_text(
             f"🎶 Searching ...\nRequested by: {user.first_name} 🥀"

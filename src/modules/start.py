@@ -1,3 +1,9 @@
+#  Copyright (c) 2025 AshokShau.
+#  TgMusicBot is an open-source Telegram music bot licensed under AGPL-3.0.
+#  All rights reserved where applicable.
+#
+#
+
 from datetime import datetime
 from types import NoneType
 
@@ -8,7 +14,12 @@ from src.database import db
 from src.modules.utils import Filter, sec_to_min
 from src.modules.utils.admins import load_admin_cache
 from src.modules.utils.buttons import AddMeButton
-from src.modules.utils.play_helpers import check_user_status, chat_invite_cache, user_status_cache
+from src.modules.utils.cacher import chat_cache
+from src.modules.utils.play_helpers import (
+    check_user_status,
+    chat_invite_cache,
+    user_status_cache,
+)
 from src.pytgcalls import call
 
 
@@ -45,8 +56,8 @@ async def help_cmd(c: Client, message: types.Message):
     text = f"""<b>Help for {c.me.first_name}:</b>
 <b>/start:</b> Start the bot.
 <b>/reload:</b> Reload chat administrator list.
-<b>/speed:</b> Change the playback speed of the current song. (0.5 - 4.0)
-<b>/play:</b> Reply to an audio or provide a song name to play music.  
+<b>/play:</b> Reply to an audio or provide a song name to play music.
+<b>/speed:</b> Change the playback speed of the current song (0.5 - 4.0).
 <b>/skip:</b> Skip the current song.  
 <b>/remove x:</b> Remove x song from the queue.
 <b>/pause:</b> Pause the current song.  
@@ -159,6 +170,10 @@ async def reload_cmd(c: Client, message: types.Message):
     chat_invite_cache.pop(chat_id, None)
     user_key = f"{chat_id}:{ub.me.id}"
     user_status_cache.pop(user_key, None)
+
+    if not await chat_cache.is_active(chat_id):
+        await chat_cache.clear_chat(chat_id)
+
     load_admins, _ = await load_admin_cache(c, chat_id, True)
 
     ub_stats = await check_user_status(c, chat_id, ub.me.id)

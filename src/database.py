@@ -1,3 +1,9 @@
+#  Copyright (c) 2025 AshokShau.
+#  TgMusicBot is an open-source Telegram music bot licensed under AGPL-3.0.
+#  All rights reserved where applicable.
+#
+#
+
 from typing import Optional
 
 from cachetools import TTLCache
@@ -52,7 +58,7 @@ class Database:
             return self.play_type_cache[chat_id]
 
         chat = await self.get_chat(chat_id)
-        play_type = chat.get("play_type", 1) if chat else 1
+        play_type = chat.get("play_type", 0) if chat else 0
         self.play_type_cache[chat_id] = play_type
         return play_type
 

@@ -1,3 +1,11 @@
+#  Copyright (c) 2025 AshokShau.
+#  TgMusicBot is an open-source Telegram music bot licensed under AGPL-3.0.
+#  All rights reserved where applicable.
+#
+#
+
+import asyncio
+import re
 from types import NoneType
 
 from pytdbot import Client, types
@@ -8,10 +16,11 @@ from src.modules.utils import (
     Filter,
     SupportButton,
     get_audio_duration,
-    PlayButton,
+    play_button,
     sec_to_min,
 )
 from src.modules.utils.admins import load_admin_cache, is_admin
+from src.modules.utils.buttons import update_progress_bar
 from src.modules.utils.cacher import chat_cache
 from src.modules.utils.play_helpers import (
     get_url,
@@ -38,21 +47,35 @@ def _get_platform_url(platform: str, track_id: str) -> str:
         return f"https://youtube.com/watch?v={track_id}"
     elif platform == "spotify":
         return f"https://open.spotify.com/track/{track_id}"
+    elif platform == "jiosaavn":
+        title, song_id = track_id.rsplit("/", 1)
+        title = title.lower()
+        title = re.sub(r'[\(\)"\',]', "", title)
+        title = title.replace(" ", "-")
+        return f"https://www.jiosaavn.com/song/{title}/{song_id}"
     else:
         LOGGER.error(f"Unknown platform: {platform}")
         return ""
 
 
 async def update_message_with_thumbnail(
-        c: Client, msg: types.Message, text: str, thumbnail: str
+    c: Client,
+    msg: types.Message,
+    text: str,
+    thumbnail: str,
+    button: types.ReplyMarkupInlineKeyboard,
 ) -> None:
     """Update a message with a thumbnail and text."""
     if not thumbnail:
-        return await edit_text(msg, text=text, reply_markup=PlayButton)
+        reply = await edit_text(msg, text=text, reply_markup=button)
+        if isinstance(reply, types.Error):
+            LOGGER.warning(f"Error editing message: {reply}")
+            return
+        return
 
     parsed_text = await c.parseTextEntities(text, types.TextParseModeHTML())
     if isinstance(parsed_text, types.Error):
-        return await edit_text(msg, text=str(parsed_text), reply_markup=PlayButton)
+        return await edit_text(msg, text=str(parsed_text), reply_markup=button)
 
     input_content = types.InputMessagePhoto(
         photo=(
@@ -67,44 +90,39 @@ async def update_message_with_thumbnail(
         chat_id=msg.chat_id,
         message_id=msg.id,
         input_message_content=input_content,
-        reply_markup=PlayButton,
+        reply_markup=button,
     )
 
     if isinstance(reply_msg, types.Error):
         LOGGER.warning(f"Error editing message: {reply_msg}")
-        await edit_text(msg, text=str(reply_msg), reply_markup=PlayButton)
+        reply_msg = await edit_text(msg, text=str(reply_msg), reply_markup=button)
 
-
-def format_now_playing(song: CachedTrack) -> str:
-    """Format the 'Now Playing' message."""
-    return (
-        f"🎵 <b>Now playing:</b>\n\n"
-        f"‣ <b>Title:</b> {song.name}\n"
-        f"‣ <b>Duration:</b> {sec_to_min(song.duration)}\n"
-        f"‣ <b>Requested by:</b> {song.user}"
-    )
+    return reply_msg
 
 
 async def play_music(
-        c: Client,
-        msg: types.Message,
-        url_data: PlatformTracks,
-        user_by: str,
-        tg_file_path: str = None,
+    c: Client,
+    msg: types.Message,
+    url_data: PlatformTracks,
+    user_by: str,
+    tg_file_path: str = None,
+    is_video: bool = False,
 ) -> None:
     """Handle playing music from a given URL or file."""
     if not url_data:
         return await edit_text(msg, "❌ Unable to retrieve song info.")
 
     tracks = url_data.tracks
+    if not tracks:
+        return await edit_text(msg, "❌ Unable to retrieve song info.")
+
     chat_id = msg.chat_id
     queue = await chat_cache.get_queue(chat_id)
     is_active = await chat_cache.is_active(chat_id)
     msg = await edit_text(msg, text="🎶 Song found. Downloading...")
-    _track = tracks[0]
-    platform = _track.platform
 
     if len(tracks) == 1:
+        _track = tracks[0]
         song = CachedTrack(
             name=_track.name,
             artist=_track.artist,
@@ -114,7 +132,8 @@ async def play_music(
             file_path=tg_file_path or "",
             thumbnail=_track.cover,
             user=user_by,
-            platform=platform,
+            platform=_track.platform,
+            url=_track.url,
         )
 
         if not song.file_path:
@@ -123,8 +142,9 @@ async def play_music(
         if not song.file_path:
             return await edit_text(msg, "❌ Error downloading the song.")
 
+        dur = song.duration or await get_audio_duration(song.file_path)
         if song.duration == 0:
-            song.duration = await get_audio_duration(song.file_path)
+            song.duration = dur
 
         if is_active:
             await chat_cache.add_song(chat_id, song)
@@ -134,22 +154,29 @@ async def play_music(
                 f"‣ <b>Duration:</b> {sec_to_min(song.duration)}\n"
                 f"‣ <b>Requested by:</b> {song.user}"
             )
+
             thumb = await gen_thumb(song)
-            return await update_message_with_thumbnail(c, msg, text, thumb)
-
+            await update_message_with_thumbnail(c, msg, text, thumb, play_button(0, 0))
+            return
         try:
-            await call.play_media(chat_id, song.file_path)
+            await call.play_media(chat_id, song.file_path, video=is_video)
         except CallError as e:
-            return await edit_text(msg, f"⚠️ {e}")
-        except Exception as e:
-            LOGGER.error(f"Error playing media: {e}")
-            return await edit_text(msg, f"⚠️ Error playing media: {e}")
-
+            return await edit_text(msg, text=f"⚠️ {e}")
         await chat_cache.add_song(chat_id, song)
         thumb = await gen_thumb(song)
-        return await update_message_with_thumbnail(
-            c, msg, format_now_playing(song), thumb
+        text = (
+            f"🎵 <b>Now playing:</b>\n\n"
+            f"‣ <b>Title:</b> {song.name}\n"
+            f"‣ <b>Duration:</b> {sec_to_min(dur)}\n"
+            f"‣ <b>Requested by:</b> {song.user}"
         )
+        reply = await update_message_with_thumbnail(c, msg, text, thumb, play_button(0, dur))
+        if isinstance(reply, types.Error):
+            LOGGER.warning(f"Error editing message: {reply}")
+            return
+
+        asyncio.create_task(update_progress_bar(c, reply, 3, dur))
+        return
 
     # Handle multiple tracks (queueing playlist/album)
     text = "<b>➻ Added to Queue:</b>\n<blockquote expandable>\n"
@@ -167,6 +194,7 @@ async def play_music(
                 user=user_by,
                 file_path="",
                 platform=track.platform,
+                url=track.url,
             ),
         )
 
@@ -191,11 +219,13 @@ async def play_music(
             f"<b>👤 Requested by:</b> {user_by}"
         )
 
-    reply = await edit_text(msg, text, reply_markup=PlayButton)
-
+    # curr_song = await chat_cache.get_current_song(chat_id)
+    reply = await edit_text(msg, text, reply_markup=play_button(0, 0))
     if isinstance(reply, types.Error):
         LOGGER.warning(f"Error sending message: {reply}")
+        return
 
+    # await update_progress_bar(c, reply, 3, curr_song.duration)
     return
 
 
@@ -263,6 +293,9 @@ async def play_audio(c: Client, msg: types.Message) -> None:
 
     args = extract_argument(msg.text)
     telegram = Telegram(reply)
+    is_video = bool(
+        telegram.is_valid() and isinstance(reply.content, types.MessageVideo)
+    )
     wrapper = MusicServiceWrapper(url or args)
     await del_msg(msg)
 
@@ -316,7 +349,7 @@ async def play_audio(c: Client, msg: types.Message) -> None:
             ]
         )
 
-        return await play_music(c, reply_message, _song, user_by, file_path)
+        return await play_music(c, reply_message, _song, user_by, file_path, is_video)
 
     if url:
         if wrapper.is_valid(url):
@@ -382,3 +415,4 @@ async def play_audio(c: Client, msg: types.Message) -> None:
 
     if isinstance(reply, types.Error):
         LOGGER.warning(f"Error sending message: {reply}")
+        return

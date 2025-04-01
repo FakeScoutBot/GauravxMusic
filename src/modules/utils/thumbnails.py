@@ -1,3 +1,9 @@
+#  Copyright (c) 2025 AshokShau.
+#  TgMusicBot is an open-source Telegram music bot licensed under AGPL-3.0.
+#  All rights reserved where applicable.
+#
+#
+
 import asyncio
 from io import BytesIO
 
@@ -43,24 +49,35 @@ def resize_youtube_thumbnail(img: Image.Image) -> Image.Image:
     return img.crop((left, top, right, bottom))
 
 
+def resize_jiosaavn_thumbnail(img: Image.Image) -> Image.Image:
+    """
+    Resize a JioSaavn thumbnail from 500x500 to 600x600.
+    It upscales the image while preserving quality.
+    """
+    target_size = 600
+    img = img.resize((target_size, target_size), Image.Resampling.LANCZOS)
+    return img
+
+
 async def fetch_image(url: str) -> Image.Image | None:
     if not url:
         return None
 
     async with httpx.AsyncClient() as client:
         try:
+            if url.startswith("https://is1-ssl.mzstatic.com"):
+                url = url.replace("500x500bb.jpg", "600x600bb.jpg")
             response = await client.get(url, timeout=5)
             response.raise_for_status()
             img = Image.open(BytesIO(response.content)).convert("RGBA")
-
             if url.startswith("https://i.ytimg.com"):
                 img = resize_youtube_thumbnail(img)
-
+            elif url.startswith("http://c.saavncdn.com") or url.startswith("https://i1.sndcdn"):
+                img = resize_jiosaavn_thumbnail(img)
             return img
         except Exception as e:
             LOGGER.error(f"Image loading error: {e}")
             return None
-
 
 def clean_text(text: str, limit: int = 17) -> str:
     """Sanitizes and truncates text to fit within the limit."""
@@ -134,7 +151,7 @@ async def gen_thumb(song: CachedTrack) -> str:
 
     thumb = await fetch_image(song.thumbnail)
     if not thumb:
-        return config.YOUTUBE_IMG_URL
+        return config.IMG_URL
 
     # Process Image
     bg = add_controls(thumb)
@@ -151,4 +168,4 @@ async def gen_thumb(song: CachedTrack) -> str:
     draw.text((478, 321), get_duration(duration), (192, 192, 192), font=FONTS["dfont"])
 
     await asyncio.to_thread(bg.save, save_dir)
-    return save_dir if await aiopath.exists(save_dir) else config.YOUTUBE_IMG_URL
+    return save_dir if await aiopath.exists(save_dir) else config.IMG_URL

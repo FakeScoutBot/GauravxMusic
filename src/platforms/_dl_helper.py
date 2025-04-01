@@ -1,5 +1,12 @@
+#  Copyright (c) 2025 AshokShau.
+#  TgMusicBot is an open-source Telegram music bot licensed under AGPL-3.0.
+#  All rights reserved where applicable.
+#
+#
+
 import asyncio
 import os
+import random
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -11,8 +18,29 @@ from yt_dlp import YoutubeDL, utils
 
 from config import DOWNLOADS_DIR, PROXY_URL
 from src.logger import LOGGER
-from src.platforms._httpx import HttpxClient
-from src.platforms.dataclass import TrackInfo
+from ._httpx import HttpxClient
+from .dataclass import TrackInfo
+
+
+async def get_cookie_file():
+    cookie_dir = "cookies"
+    try:
+        if not os.path.exists(cookie_dir):
+            LOGGER.warning(f"Cookie directory '{cookie_dir}' does not exist.")
+            return None
+
+        files = await asyncio.to_thread(os.listdir, cookie_dir)
+        cookies_files = [f for f in files if f.endswith(".txt")]
+
+        if not cookies_files:
+            LOGGER.warning(f"No cookie files found in '{cookie_dir}'.")
+            return None
+
+        random_file = random.choice(cookies_files)
+        return os.path.join(cookie_dir, random_file)
+    except Exception as e:
+        LOGGER.warning(f"Error accessing cookie directory: {e}")
+        return None
 
 
 class YouTubeDownload:
@@ -34,21 +62,6 @@ class YouTubeDownload:
 
     async def _download_with_yt_dlp(self) -> Optional[str]:
         """Download audio using yt-dlp with proxy support."""
-
-        def get_cookie_file() -> Optional[str]:
-            """Retrieve the first available cookie file from the cookies directory."""
-            cookie_dir = "cookies"
-            if not os.path.exists(cookie_dir):
-                LOGGER.warning(f"Cookie directory '{cookie_dir}' does not exist.")
-                return None
-
-            cookies_files = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]
-            if not cookies_files:
-                LOGGER.warning(f"No cookie files found in '{cookie_dir}'.")
-                return None
-
-            return os.path.join(cookie_dir, cookies_files[0])
-
         ydl_opts = {
             "format": "bestaudio/best",
             "postprocessors": [
@@ -68,7 +81,7 @@ class YouTubeDownload:
             },
         }
 
-        if cookie_file := get_cookie_file():
+        if cookie_file := await get_cookie_file():
             ydl_opts["cookiefile"] = cookie_file
 
         # Add proxy if configured

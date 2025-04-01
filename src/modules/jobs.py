@@ -1,3 +1,9 @@
+#  Copyright (c) 2025 AshokShau.
+#  TgMusicBot is an open-source Telegram music bot licensed under AGPL-3.0.
+#  All rights reserved where applicable.
+#
+#
+
 import asyncio
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -55,7 +61,7 @@ class InactiveCallManager:
 
         # Process tasks in batches of 3 with a 1-second delay between batches
         for i in range(0, len(tasks), 3):
-            await asyncio.gather(*tasks[i: i + 3])
+            await asyncio.gather(*tasks[i : i + 3])
             await asyncio.sleep(1)
 
         self.bot.logger.debug("Inactive call checks completed.")

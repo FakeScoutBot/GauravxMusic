@@ -1,3 +1,9 @@
+#  Copyright (c) 2025 AshokShau.
+#  TgMusicBot is an open-source Telegram music bot licensed under AGPL-3.0.
+#  All rights reserved where applicable.
+#
+#
+
 from pytdbot import Client, types
 
 from src.database import db
@@ -17,23 +23,19 @@ If you don't know how to convert, use this guide:
 
 If you have any questions, join our support group:
 """
-    reply = await client.sendTextMessage(
+    await client.sendTextMessage(
         chat_id, text, parse_mode="HTML", reply_markup=AddMeButton
     )
-    if isinstance(reply, types.Error):
-        LOGGER.warning(f"Error sending message: {reply}")
 
-    ok = await client.leaveChat(chat_id)
-    if isinstance(ok, types.Error):
-        LOGGER.warning(f"Error leaving chat: {ok}")
+    await client.leaveChat(chat_id)
+    return
 
 
 @Client.on_updateChatMember()
 async def chat_member(client: Client, update: types.UpdateChatMember):
     """Handles member updates in the chat (joins, leaves, promotions, demotions, bans, and unbans)."""
     chat_id = update.chat_id
-    # Non supergroup
-    if chat_id > 0:
+    if not str(chat_id).startswith("-100"):
         return await handle_non_supergroup(client, chat_id)
 
     await db.add_chat(chat_id)
@@ -51,8 +53,8 @@ async def chat_member(client: Client, update: types.UpdateChatMember):
 
     # User Left (Left or Kicked)
     if (
-            old_status in {"chatMemberStatusMember", "chatMemberStatusAdministrator"}
-            and new_status == "chatMemberStatusLeft"
+        old_status in {"chatMemberStatusMember", "chatMemberStatusAdministrator"}
+        and new_status == "chatMemberStatusLeft"
     ):
         LOGGER.info(f"User {user_id} left or was kicked from {chat_id}.")
         return
@@ -68,9 +70,10 @@ async def chat_member(client: Client, update: types.UpdateChatMember):
         return
 
     is_promoted = (
-            old_status != "chatMemberStatusAdministrator"
-            and new_status == "chatMemberStatusAdministrator"
+        old_status != "chatMemberStatusAdministrator"
+        and new_status == "chatMemberStatusAdministrator"
     )
+
     # Bot Promoted
     if user_id == client.options["my_id"] and is_promoted:
         LOGGER.info(f"Bot was promoted in {chat_id}, reloading admin permissions.")
@@ -85,9 +88,10 @@ async def chat_member(client: Client, update: types.UpdateChatMember):
 
     # User Demoted
     is_demoted = (
-            old_status == "chatMemberStatusAdministrator"
-            and new_status != "chatMemberStatusAdministrator"
+        old_status == "chatMemberStatusAdministrator"
+        and new_status != "chatMemberStatusAdministrator"
     )
+
     if is_demoted:
         LOGGER.info(f"User {user_id} was demoted in {chat_id}.")
         if user_id == client.options["my_id"] or client.me.id:
